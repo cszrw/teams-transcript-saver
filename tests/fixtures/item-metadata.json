@@ -1,0 +1,20 @@
+{
+  "@odata.context": "https://contoso-my.sharepoint.com/_api/v2.0/$metadata#items/$entity",
+  "id": "01ABCDEFGHIJKLMNOPQRSTUVWXYZ012345",
+  "name": "Weekly Sync-20261009_083000-Meeting Recording.mp4",
+  "createdDateTime": "2026-10-09T06:30:12Z",
+  "size": 123456,
+  "file": { "mimeType": "video/mp4" },
+  "media": {
+    "duration": 3500000,
+    "transcripts": [
+      {
+        "id": "a1b2c3d4-0000-4000-8000-000000000001",
+        "displayName": "Weekly Sync.json",
+        "languageTag": "en-US",
+        "transcriptType": "subtitle",
+        "temporaryDownloadUrl": "https://contoso-my.sharepoint.com/_api/v2.1/drives/b!abc/items/01ABC/media/transcripts/a1b2c3d4/streamContent?tempauth=FAKE.TOKEN.VALUE"
+      }
+    ]
+  }
+}

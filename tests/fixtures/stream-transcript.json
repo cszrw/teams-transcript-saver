@@ -1,0 +1,47 @@
+{
+  "$schema": "http://stream.office.com/schemas/transcript.json",
+  "version": "1.0.0",
+  "type": "Transcript",
+  "entries": [
+    {
+      "id": "11111111-2222-4333-8444-555555555555/40",
+      "speechServiceResultId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "text": "Morning, quick round today.",
+      "speakerId": "00000000-0000-4000-8000-00000000000a@00000000-0000-4000-8000-0000000000ff",
+      "speakerDisplayName": "Example, Alice",
+      "confidence": 0.91,
+      "startOffset": "00:00:02.4981234",
+      "endOffset": "00:00:04.8272091",
+      "hasBeenEdited": false,
+      "roomId": null,
+      "spokenLanguageTag": "en-us"
+    },
+    {
+      "id": "11111111-2222-4333-8444-555555555555/41",
+      "speechServiceResultId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "text": "I finished the widget export.",
+      "speakerId": "00000000-0000-4000-8000-00000000000a@00000000-0000-4000-8000-0000000000ff",
+      "speakerDisplayName": "Example, Alice",
+      "confidence": 0.88,
+      "startOffset": "00:00:05.1000000",
+      "endOffset": "00:00:07.0000000",
+      "hasBeenEdited": false,
+      "roomId": null,
+      "spokenLanguageTag": "en-us"
+    },
+    {
+      "id": "11111111-2222-4333-8444-555555555555/45",
+      "speechServiceResultId": "cccccccccccccccccccccccccccccccc",
+      "text": "Nice. I'll review it after lunch.",
+      "speakerId": "00000000-0000-4000-8000-00000000000b@00000000-0000-4000-8000-0000000000ff",
+      "speakerDisplayName": "Sample, Bob",
+      "confidence": 0.93,
+      "startOffset": "00:01:10.5000000",
+      "endOffset": "00:01:13.0000000",
+      "hasBeenEdited": true,
+      "roomId": null,
+      "spokenLanguageTag": "en-us"
+    }
+  ],
+  "events": []
+}

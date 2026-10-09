@@ -1,0 +1,19 @@
+WEBVTT
+
+NOTE synthetic fixture
+
+1
+00:00:01.000 --> 00:00:03.000
+<v Alice Example>Hello everyone.</v>
+
+2
+00:00:03.500 --> 00:00:05.000
+<v Alice Example>Let's get started.</v>
+
+3
+00:00:05.200 --> 00:00:07.900
+<v.loud Bob Sample>Thanks, Alice &amp; welcome.</v>
+
+4
+01:02:03.400 --> 01:02:05.000
+<v Alice Example>Wrapping up now.</v>

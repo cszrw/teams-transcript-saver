@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body{font:13px/1.35 -apple-system,"Segoe UI",sans-serif;width:320px;margin:10px;color:#222}
+    h1{font-size:14px;margin:0 0 8px}
+    ul{list-style:none;padding:0;margin:0}
+    li{display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid #eee}
+    li div{flex:1;min-width:0}
+    .name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .meta{color:#666;font-size:11px}
+    button{background:#5b5fc7;color:#fff;border:0;border-radius:4px;padding:5px 10px;cursor:pointer}
+    button:disabled{opacity:.5}
+    #status{margin-top:8px}
+    .err{color:#a4262c}
+    .empty{color:#555}
+  </style>
+</head>
+<body>
+  <h1>Teams Transcript Saver</h1>
+  <ul id="list"></ul>
+  <p id="empty" class="empty" hidden>No transcript captured on this tab. In Teams, open the meeting → Recap → Transcript. If it's already open, close and reopen it, or reload the page.</p>
+  <div id="status"></div>
+  <script src="popup.js"></script>
+</body>
+</html>
