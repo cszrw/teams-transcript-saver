@@ -13,6 +13,8 @@
     if (e.source !== window || !d || d[TAG] !== true) return;
     if (d.type === 'captured') {
       chrome.runtime.sendMessage({ type: 'captured', transcripts: d.transcripts }).catch(() => {});
+    } else if (d.type === 'item-context' && d.item) {
+      chrome.runtime.sendMessage({ type: 'item-context', item: d.item }).catch(() => {});
     } else if (d.type === 'fetch-response' && pending.has(d.id)) {
       pending.get(d.id)(d);
       pending.delete(d.id);
