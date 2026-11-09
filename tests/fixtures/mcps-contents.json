@@ -1,0 +1,17 @@
+{
+  "resources": [
+    {
+      "type": "MeetingTranscript",
+      "location": "https://contoso-my.sharepoint.com/personal/alex_contoso_com/_api/v2.1/drives/b!exampleDriveId/items/01EXAMPLEITEMID0000000000000000000000/media/transcripts/aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee/content",
+      "metadata": {
+        "driveId": "b!exampleDriveId",
+        "driveItemId": "01EXAMPLEITEMID0000000000000000000000",
+        "transcriptId": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+        "fileTitle": "Weekly Sync",
+        "languageTag": "en-US",
+        "webUrl": "https://contoso-my.sharepoint.com/personal/alex_contoso_com/Documents/Recordings/Weekly-Sync-20261105_083000-Meeting-Recording.mp4",
+        "startTime": "638980338000000000"
+      }
+    }
+  ]
+}
