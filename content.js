@@ -5,6 +5,15 @@
   const TAG = '__teamsTranscriptSaver';
   const isTop = window === window.top;
   const pending = new Map();
+  const RELOAD_MSG = 'Extension was updated. Reload this page (Cmd+R) and try again.';
+  const alive = () => { try { return !!(chrome.runtime && chrome.runtime.id); } catch (e) { return false; } };
+  // Never throws: after an extension reload chrome.runtime.* throws synchronously ("Extension context invalidated").
+  function send(msg) {
+    try {
+      if (!alive()) return Promise.reject(new Error('Extension context invalidated'));
+      return Promise.resolve(chrome.runtime.sendMessage(msg));
+    } catch (e) { return Promise.reject(e); }
+  }
   let nextId = 1;
 
   // Page -> background
@@ -12,7 +21,13 @@
     const d = e.data;
     if (e.source !== window || !d || d[TAG] !== true) return;
     if (d.type === 'captured') {
-      chrome.runtime.sendMessage({ type: 'captured', transcripts: d.transcripts }).catch(() => {});
+      send({ type: 'captured', transcripts: d.transcripts }).catch(() => {});
+    } else if (d.type === 'item-context' && d.item) {
+      send({ type: 'item-context', item: d.item }).catch(() => {});
+    } else if (d.type === 'observe') {
+      send({ type: 'observe', entry: d.entry }).catch(() => {});
+    } else if (d.type === 'meta') {
+      send({ type: 'meta', meetings: d.meetings, chat: d.chat }).catch(() => {});
     } else if (d.type === 'fetch-response' && pending.has(d.id)) {
       pending.get(d.id)(d);
       pending.delete(d.id);
@@ -29,15 +44,15 @@
     });
   }
 
-  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  try { chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (msg.type === 'page-fetch') {
       pageFetch(msg.url).then(sendResponse);
       return true;
     }
     if (msg.type === 'state' && isTop) renderButton(msg.count);
-    if (msg.type === 'status' && isTop) showStatus(msg.text, msg.error);
+    if (msg.type === 'status' && isTop) { clearTimeout(saveWatchdog); showStatus(msg.text, msg.error); }
     return false;
-  });
+  }); } catch (e) { /* extension context gone */ }
 
   if (!isTop) return;
 
@@ -90,14 +105,25 @@
     });
   }
 
+  let saveWatchdog;
   function save() {
+    clearTimeout(saveWatchdog);
+    if (!alive()) { showStatus(RELOAD_MSG, true); return; }
     showStatus('Saving…');
-    chrome.runtime.sendMessage({ type: 'save-latest' }).catch(() => showStatus('Extension was reloaded. Reload this page.', true));
+    saveWatchdog = setTimeout(() => showStatus('No answer from the extension after 90 s. Reload this page and try again.', true), 90000);
+    send({ type: 'save-latest' }).catch((e) => {
+      clearTimeout(saveWatchdog);
+      showStatus(/context invalidated|Receiving end|disconnected/i.test(String(e && e.message)) ? RELOAD_MSG : `Could not reach the extension: ${e && e.message}`, true);
+    });
   }
 
+  let lastCount = 0;
   function renderButton(count) {
+    lastCount = count || 0;
+    console.log('[TTS] render button, captures:', lastCount);
     if (!count) { if (host) host.style.display = 'none'; return; }
     ensureUi();
+    if (!host.isConnected) (document.body || document.documentElement).appendChild(host);
     host.style.display = '';
     btn.textContent = count > 1 ? `⬇ Save transcript (${count})` : '⬇ Save transcript';
     btn.title = count > 1 ? 'Saves the most recent one. Use the toolbar icon to pick another. Drag to move.' : 'Drag to move';
@@ -114,5 +140,13 @@
   }
 
   // Ask for current state (e.g. after an in-page reload of the content script).
-  chrome.runtime.sendMessage({ type: 'hello' }).then((r) => r && renderButton(r.count)).catch(() => {});
+  send({ type: 'hello', fresh: true }).then((r) => r && renderButton(r.count)).catch(() => {});
+
+  // Teams re-renders/replaces the body; put the button back if it was removed.
+  setInterval(() => {
+    if (lastCount && host && !host.isConnected) {
+      console.log('[TTS] button removed by page, re-adding');
+      (document.body || document.documentElement).appendChild(host);
+    }
+  }, 1500);
 })();
