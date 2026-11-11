@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Teams Transcript Saver",
-  "version": "1.0.0",
+  "version": "1.1.8",
   "description": "Saves the full transcript of a Teams meeting you can already open, straight from your own browser session. Nothing leaves your machine.",
   "minimum_chrome_version": "111",
   "permissions": ["downloads", "storage"],
@@ -15,7 +15,7 @@
   "content_scripts": [
     {
       "matches": ["https://teams.microsoft.com/*", "https://teams.cloud.microsoft/*", "https://*.sharepoint.com/*"],
-      "js": ["lib/scan.js", "inject.js"],
+      "js": ["lib/scan.js", "lib/meta.js", "inject.js"],
       "world": "MAIN",
       "run_at": "document_start",
       "all_frames": true

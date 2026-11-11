@@ -98,3 +98,14 @@ Use the toolbar popup to choose another.
 - `lib/convert.js`: JSON / WebVTT → readable text
 - `lib/naming.js`: file names
 - `tests/`: unit tests with synthetic fixtures. Run `node --test tests/` (Node 18+, no installs needed).
+
+## 1.1.0: meeting date and chat
+
+- The file date is now the meeting's start date (Europe/Berlin), taken from the meeting details or the
+  meeting chat that the Teams page loads while you have it open. If neither was seen, it falls back to the
+  download date and the .txt says `Meeting start: unknown`.
+- `.txt` line 2 is now `Meeting start: YYYY-MM-DD HH:MM Europe/Berlin (end HH:MM)`. If chat messages were
+  seen, the file ends with a `== Meeting chat ==` section: `[YYYY-MM-DD HH:MM] Sender: text`.
+- `.json` gets extra top-level fields: `meetingStart`, `meetingEnd`, `meetingSubject`, `meetingStartSource`,
+  `chatThreadId`, `chat` (`[{time, sender, text}]`, times in UTC ISO). `entries`/`events` are unchanged.
+- To get the chat: open the meeting's **Chat** tab (scroll up to load older messages) before saving.

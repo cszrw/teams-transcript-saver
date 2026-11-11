@@ -14,10 +14,37 @@
     window.postMessage(Object.assign({ [TAG]: true }, msg), location.origin);
   }
 
-  function inspect(text) {
-    if (!scan.mightContainTranscript(text)) return;
+  const meta = window.__teamsTranscriptMeta;
+
+  let observed = 0;
+  function observe(url, status, ct, text) {
+    try {
+      if (!meta || observed >= 200 || typeof text !== 'string') return;
+      observed++;
+      const at = new Date().toISOString();
+      const small = text.length < 1e6 ? text : '';
+      // Lazy: summarise off the response path, and send only the small summary.
+      setTimeout(() => {
+        try { post({ type: 'observe', entry: Object.assign(meta.summarize(url, status, ct, small), { at, frame: location.host, bodySize: text.length }) }); }
+        catch (e) { console.log('[TTS] observe failed', e); }
+      }, 0);
+    } catch (e) { console.log('[TTS] observe failed', e); }
+  }
+  function inspect(text) { try { inspectInner(text); } catch (e) { console.log('[TTS] inspect failed', e); } }
+  function inspectInner(text) {
+    const hasT = scan.mightContainTranscript(text);
+    const hasM = meta && text && text.length < 5e6 && meta.mightContain(text);
+    if (!hasT && !hasM) return;
     let json;
     try { json = JSON.parse(text); } catch (e) { return; }
+    if (hasM) {
+      try {
+        const meetings = meta.scanMeetings(json);
+        const chat = meta.scanChat(json);
+        if (meetings.length || chat) post({ type: 'meta', meetings, chat });
+      } catch (e) { console.log('[TTS] meta parse failed', e); }
+    }
+    if (!hasT) return;
     const found = scan.scanForTranscripts(json);
     if (found.length) post({ type: 'captured', transcripts: found.map((t) => Object.assign(t, { capturedAt: new Date().toISOString() })) });
   }
@@ -30,7 +57,7 @@
         try {
           const ct = res.headers.get('content-type') || '';
           if (!/json/i.test(ct)) return;
-          res.clone().text().then(inspect, () => {});
+          res.clone().text().then((t) => { observe(res.url, res.status, ct, t); inspect(t); }, () => {});
         } catch (e) { /* never break the page */ }
       }, () => {});
       return p;
@@ -46,8 +73,10 @@
         try {
           const ct = this.getResponseHeader('content-type') || '';
           if (!/json/i.test(ct)) return;
-          if (this.responseType === '' || this.responseType === 'text') inspect(this.responseText);
-          else if (this.responseType === 'json' && this.response) inspect(JSON.stringify(this.response));
+          let t = null;
+          if (this.responseType === '' || this.responseType === 'text') t = this.responseText;
+          else if (this.responseType === 'json' && this.response) t = JSON.stringify(this.response);
+          if (t != null) { observe(this.responseURL, this.status, ct, t); inspect(t); }
         } catch (e) { /* never break the page */ }
       });
       return origSend.apply(this, args);
