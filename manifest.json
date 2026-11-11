@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Teams Transcript Saver",
-  "version": "1.1.8",
+  "version": "1.2.0",
   "description": "Saves the full transcript of a Teams meeting you can already open, straight from your own browser session. Nothing leaves your machine.",
   "minimum_chrome_version": "111",
   "permissions": ["downloads", "storage"],

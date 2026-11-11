@@ -4,32 +4,41 @@ A small Chrome extension that saves the **full** transcript of a Teams meeting f
 Teams web client. The Teams transcript pane only shows part of the transcript at a time, so
 copying from it misses most of the meeting. This extension gets the whole file instead.
 
+It does **not** use the Recap player's native **Download** button. That control can be
+disabled even when you can still open the transcript; the extension talks to the same
+cookie-authenticated SharePoint transcript APIs Teams already uses.
+
 ## What it does
 
-1. When you open a meeting's Recap / Transcript in Teams on the web, Teams asks SharePoint for
-   the recording's details (`…sharepoint.com/_api/v2.0/drives/<drive>/items/<item>`). That
-   answer contains `media.transcripts[]`, each with a short-lived `temporaryDownloadUrl`.
-2. The extension notices that answer in the page and remembers the link for that tab.
-   A small **⬇ Save transcript** button appears bottom-right (drag it if it's in the way), and
-   the toolbar icon shows how many transcripts it caught.
-3. When you click Save, it downloads the transcript using your own logged-in session and saves:
-   - `Downloads/teams-transcripts/<YYYY-MM-DD>_<meeting-name>.json` (or `.vtt`), the raw file, unchanged
+1. When you open a meeting's Recap / Transcript in Teams on the web, Teams talks to
+   SharePoint (`…sharepoint.com/_api/…/drives/<drive>/items/<item>/…`). Recap often uses a
+   short-lived `temporaryDownloadUrl` or a `_api_cached/…/cdnmedia/transcripts` request
+   that 401/403s. The extension records the **drive, item and transcript ids** from those
+   calls (and from recap links / meeting-content JSON) instead of depending on the token.
+2. A small **⬇ Save transcript** button appears bottom-right (drag it if it's in the way),
+   and the toolbar icon shows how many transcripts it caught.
+3. When you click Save, it downloads the transcript with your logged-in browser session:
+   cookie-auth `…/_api/v2.1/drives/…/items/…/media/transcripts/<id>/content?format=json`.
+   If `/content` returns 401/403 it retries `streamContent`, Teams collab/mcps endpoints,
+   and the item's transcripts collection. It does not download the recording file.
+   Files saved:
+   - `Downloads/teams-transcripts/<YYYY-MM-DD>_<meeting-name>.json` (or `.vtt`), the raw file
    - `Downloads/teams-transcripts/<YYYY-MM-DD>_<meeting-name>.txt`, a readable version:
      `[mm:ss] Speaker: text`, with consecutive lines from the same speaker merged.
 
    It asks for the JSON version first (`?format=json`), because that includes **speaker names**
    (`speakerDisplayName`). If JSON isn't offered it falls back to the plain stream, which is
-   WebVTT and usually has no speaker names. The date is the meeting date (from the recording's
-   name or creation time) in Europe/Berlin time, otherwise today.
+   WebVTT and usually has no speaker names. The date is the meeting date (from meeting
+   details, recording metadata, or the recording's name) in Europe/Berlin time, otherwise today.
 
 ## Privacy
 
 - Runs only in your own browser, with your existing Teams login. No accounts, no tokens to set up.
 - Nothing is sent anywhere: no servers, analytics or third parties. The only network requests
   it makes are the transcript downloads, to the same Microsoft address Teams itself uses.
-- The temporary link is kept in Chrome's in-memory session storage for the tab only. It's
-  wiped when you close the tab, reload the page or quit Chrome, and it's never written to the
-  console or to disk. (The link expires on its own after a short time anyway.)
+- Captured ids and links are kept in Chrome's in-memory session storage for the tab only. They
+  are wiped when you close the tab, reload the page or quit Chrome, and they are never written
+  to the console. Debug dumps omit download URLs and tokens.
 - Saved files go only to your Downloads folder.
 - It saves transcripts of meetings you can already open, using your own access. Follow your
   company's rules on storing meeting transcripts outside Teams.
@@ -51,7 +60,8 @@ copying from it misses most of the meeting. This extension gets the whole file i
 3. Click **Load unpacked** and pick this folder (`teams-transcript-saver`).
 4. Optional: pin the extension (puzzle icon → pin) to see the badge count.
 
-If you change or update the files, click the reload ↻ icon on the extension's card.
+If you change or update the files, click the reload ↻ icon on the extension's card, then
+**reload the Teams tab**.
 
 ## Daily use
 
@@ -63,10 +73,13 @@ If you change or update the files, click the reload ↻ icon on the extension's 
 If several transcripts were caught on the tab, the floating button saves the most recent one.
 Use the toolbar popup to choose another.
 
+The native Teams **Download** button is not required and may be disabled.
+
 ## Troubleshooting
 
-- **"The download link has expired"**: the link Teams handed out is short-lived. Close and
-  reopen the Transcript (or Recap) pane, then click Save again straight away.
+- **"The download link has expired"**: 1.2.0 retries cookie-auth `/content`, `streamContent`,
+  collab, and the transcripts collection. If it still fails, close and reopen the Transcript
+  (or Recap) pane, then click Save again. Reload the Teams tab after reloading the extension.
 - **No button / popup says nothing captured**: the extension has to be running *before* Teams
   asks for the transcript. Close and reopen the transcript pane, or reload the Teams page
   (Cmd+R) and open the transcript again. If you just installed or reloaded the extension,
@@ -94,10 +107,14 @@ Use the toolbar popup to choose another.
 - `content.js`: bridge between page and extension; draws the floating button
 - `background.js`: keeps captures per tab, downloads, converts and saves
 - `popup.html`, `popup.js`: toolbar popup
-- `lib/scan.js`: finds transcript links in API answers
+- `lib/scan.js`: finds transcript ids and builds cookie-auth download URLs
 - `lib/convert.js`: JSON / WebVTT → readable text
 - `lib/naming.js`: file names
-- `tests/`: unit tests with synthetic fixtures. Run `node --test tests/` (Node 18+, no installs needed).
+- `lib/meta.js`: meeting date and chat-thread resolution from page JSON
+- `lib/output.js`: .txt header, chat section, JSON augment
+- `icons/`: toolbar icons
+- `tests/`: unit tests with synthetic **contoso** fixtures. Run `node --test tests/*.test.js`
+  (Node 18+, no installs needed).
 
 ## 1.1.0: meeting date and chat
 
@@ -109,3 +126,24 @@ Use the toolbar popup to choose another.
 - `.json` gets extra top-level fields: `meetingStart`, `meetingEnd`, `meetingSubject`, `meetingStartSource`,
   `chatThreadId`, `chat` (`[{time, sender, text}]`, times in UTC ISO). `entries`/`events` are unchanged.
 - To get the chat: open the meeting's **Chat** tab (scroll up to load older messages) before saving.
+
+## 1.1.x (kept in 1.2.0)
+
+- Timeouts on every save step so the button cannot sit on "Saving…" forever.
+- Button watchdog if Teams removes the floating control from the DOM.
+- Guard against "Extension context invalidated" after an extension reload (reload the Teams tab).
+- Overwrite previous files in `teams-transcripts/` instead of creating ` (1)` copies.
+- Meeting-date and chat-thread resolution from recap/collab JSON (`lib/meta.js`).
+
+## 1.2.0: cookie-auth transcript download
+
+- Save no longer uses the Recap `temporaryDownloadUrl` / `_api_cached/cdnmedia` stream as the
+  first choice. Those expire and 401/403; a first 401 used to abort with an empty transcript
+  body (name / language / capturedAt only).
+- Downloads with the page's cookies at
+  `/_api/v2.1/drives/{drive}/items/{item}/media/transcripts/{id}/content?format=json`.
+- On 401/403, refreshes the listing and also tries `streamContent` (including
+  `applyhighlights=false&applymediaedits=false`), Teams collab/mcps locations, and the item's
+  `media/transcripts` collection. Does not require the recording **Download** permission.
+- Captures drive/item/transcript ids from current Recap requests, recap URLs, and
+  meeting-content JSON even when the response is binary cdnmedia.

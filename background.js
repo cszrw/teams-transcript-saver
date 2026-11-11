@@ -1,10 +1,13 @@
 // Service worker: keeps per-tab captures (in memory-only session storage),
-// downloads and saves transcripts.
-importScripts('lib/convert.js', 'lib/naming.js', 'lib/output.js');
+// downloads and saves transcripts. Prefers cookie-auth SharePoint /content
+// over short-lived tempauth links (those now 401/403 on current Teams recap).
+importScripts('lib/convert.js', 'lib/naming.js', 'lib/output.js', 'lib/scan.js');
 
 const MAX_PER_TAB = 10;
 const ALLOWED_HOST = /(^|\.)(sharepoint\.com|svc\.ms|teams\.microsoft\.com|teams\.cloud\.microsoft)$/i;
 const key = (tabId) => `tab:${tabId}`;
+const Scan = self.__teamsTranscriptScan;
+const discovering = new Set();
 
 // chrome.storage.session lives in memory only and is wiped when Chrome closes.
 async function getCaptures(tabId) {
@@ -32,24 +35,26 @@ function isAllowedUrl(url) {
   try { const u = new URL(url); return u.protocol === 'https:' && ALLOWED_HOST.test(u.hostname); } catch (e) { return false; }
 }
 
-// Same transcript, refreshed token -> same key (URL without its query string).
-const transcriptKey = (url) => url.split('?')[0];
+// Same recording/transcript, refreshed URL -> same key.
+const transcriptKey = (t) => {
+  if (t.contentUrl) return t.contentUrl.split('?')[0];
+  if (t.driveId && t.itemId) return `${t.driveId}/${t.itemId}/${t.transcriptId || ''}`;
+  if (t.url) return t.url.split('?')[0];
+  return t.id;
+};
 
 async function addCaptures(tabId, frameId, transcripts) {
   let list = await getCaptures(tabId);
   for (const t of transcripts) {
-    if (!t || !isAllowedUrl(t.url)) continue;
-    const k = transcriptKey(t.url);
-    list = list.filter((x) => transcriptKey(x.url) !== k);
+    if (!t) continue;
+    const url = t.contentUrl || t.url;
+    if (url && !isAllowedUrl(url)) continue;
+    if (!url && !(t.driveId && t.itemId && (t.host || t.origin))) continue;
+    const k = transcriptKey(t);
+    list = list.filter((x) => transcriptKey(x) !== k);
     list.push({ ...t, frameId, id: k });
   }
   await setCaptures(tabId, list.slice(-MAX_PER_TAB));
-}
-
-function withFormatJson(url) {
-  const u = new URL(url);
-  u.searchParams.set('format', 'json');
-  return u.toString();
 }
 
 class ExpiredError extends Error {}
@@ -68,7 +73,9 @@ async function getMetaSafe(tabId) {
 }
 
 // Fetch from the page first (same session as Teams), then from the service worker.
+// Do not throw on 401/403: callers try /content, streamContent, collab, then refresh.
 async function fetchText(tabId, frameId, url) {
+  if (!isAllowedUrl(url)) return { ok: false, status: 0, error: 'blocked host' };
   let r = await withTimeout(chrome.tabs.sendMessage(tabId, { type: 'page-fetch', url }, { frameId }), 15000, 'page download').catch((e) => { console.log('[TTS]', e.message); return null; });
   if (!r || (!r.ok && !r.status)) {
     const ctl = new AbortController();
@@ -80,21 +87,68 @@ async function fetchText(tabId, frameId, url) {
       r = { ok: false, status: 0, error: ctl.signal.aborted ? 'timed out' : String(e.message || e) };
     } finally { clearTimeout(timer); }
   }
-  if (r.status === 401 || r.status === 403) throw new ExpiredError();
   return r;
 }
 
-// Try JSON first (has speaker names), then the plain stream (usually WEBVTT).
-async function download(tabId, t) {
-  const tries = [withFormatJson(t.url), t.url];
-  let last;
-  for (const url of tries) {
-    last = await fetchText(tabId, t.frameId || 0, url);
-    if (last.ok && last.text && last.text.trim()) {
-      if (url !== t.url && TranscriptConvert.detectExtension(last.text) !== 'json') continue;
-      return last.text;
+function usableBody(text, wantJson) {
+  if (!text || !String(text).trim()) return false;
+  const ext = TranscriptConvert.detectExtension(text);
+  if (wantJson && ext !== 'json') return false;
+  if (ext === 'txt' && !TranscriptConvert.toReadable(text)) return false;
+  return ext === 'json' || ext === 'vtt' || !!TranscriptConvert.toReadable(text);
+}
+
+async function refreshTranscript(tabId, t) {
+  const urls = Scan.discoverUrls(t);
+  for (const url of urls) {
+    const r = await fetchText(tabId, t.frameId || 0, url);
+    if (!r || !r.ok || !r.text) continue;
+    let json;
+    try { json = JSON.parse(r.text); } catch (e) { continue; }
+    const found = Scan.scanForTranscripts(json, url);
+    if (found.length) {
+      await addCaptures(tabId, t.frameId, found);
+      return found[found.length - 1];
     }
   }
+  const parsed = Scan.partsFromCapture(t);
+  if (parsed && parsed.transcriptId) {
+    const contentUrl = Scan.buildTranscriptUrl(parsed, 'content');
+    if (contentUrl) return { ...t, url: contentUrl, contentUrl };
+  }
+  return null;
+}
+
+async function download(tabId, t) {
+  let current = t;
+  if (!(current.transcriptId || (Scan.partsFromCapture(current) || {}).transcriptId)) {
+    const listed = await refreshTranscript(tabId, current);
+    if (listed) current = { ...current, ...listed };
+  }
+  const tried = new Set();
+  async function attempt(src) {
+    let last;
+    for (const url of Scan.downloadCandidates(src)) {
+      if (tried.has(url)) continue;
+      tried.add(url);
+      last = await fetchText(tabId, src.frameId || 0, url);
+      const wantJson = /[?&]format=json(?:&|$)/.test(url);
+      if (last && last.ok && usableBody(last.text, wantJson)) return { text: last.text, last };
+      if (last && last.ok && last.text && wantJson) continue;
+    }
+    return { text: null, last };
+  }
+  let { text, last } = await attempt(current);
+  const expired = last && (last.status === 401 || last.status === 403);
+  if (!text && (expired || !current.transcriptId)) {
+    const fresh = await refreshTranscript(tabId, current);
+    if (fresh) {
+      current = { ...current, ...fresh };
+      ({ text, last } = await attempt(current));
+    }
+  }
+  if (text) return text;
+  if (last && (last.status === 401 || last.status === 403)) throw new ExpiredError();
   throw new Error(`Download failed (${last && (last.status || last.error) || 'no response'}).`);
 }
 
@@ -167,9 +221,15 @@ async function saveDebug(tabId, base, t, info, notes) {
   try {
     const observed = observations.get(tabId) || [];
     const meta = await getMetaSafe(tabId);
+    const cap = Scan.debugCapture(t);
     const dbg = {
       version: chrome.runtime.getManifest().version, savedAt: new Date().toISOString(),
-      transcript: { name: t.name, itemName: t.itemName, createdDateTime: t.createdDateTime, meetingDate: t.meetingDate, language: t.language, capturedAt: t.capturedAt },
+      transcript: {
+        name: t.name, itemName: t.itemName, createdDateTime: t.createdDateTime,
+        meetingDate: t.meetingDate, language: t.language, capturedAt: t.capturedAt,
+        hasUrl: cap.hasUrl, hasContentUrl: cap.hasContentUrl, hasDriveItem: cap.hasDriveItem,
+        hasTranscriptId: cap.hasTranscriptId, hasLocation: cap.hasLocation, urlKind: cap.urlKind,
+      },
       resolved: { start: info.start || null, startSource: info.startSource || null, subject: info.subject || null, threadId: info.threadId || null, chatMessages: info.chat ? info.chat.messages.length : 0 },
       notes,
       meetingsSeen: (meta.meetings || []).map(({ start, end, subject, threadId }) => ({ start, end, subject, threadId })),
@@ -197,6 +257,7 @@ async function saveTranscript(tabId, t) {
     else if (!info.start) notes.push(`meeting candidates seen, none matching "${title}" and not all from one meeting thread`);
     if (info.threadId && !info.chat) notes.push('meeting thread known but no chat messages were loaded by the page (open the meeting Chat tab before saving)');
     if (!info.threadId) notes.push('no meeting chat thread (19:meeting_…@thread.v2) linked');
+    if (!t.transcriptId && !(t.driveId && t.itemId)) notes.push('no SharePoint drive/item ids on the capture; reopen Recap → Transcript');
 
     const raw = await withTimeout(download(tabId, t), 40000, 'transcript download');
     const ext = TranscriptConvert.detectExtension(raw);
@@ -209,7 +270,7 @@ async function saveTranscript(tabId, t) {
       files.push(`${base}.txt`);
     }
   } catch (e) {
-    notes.push('save failed: ' + (e instanceof ExpiredError ? 'download link expired (401/403)' : e.message));
+    notes.push('save failed: ' + (e instanceof ExpiredError ? 'download link expired (401/403); retried cookie-auth /content, streamContent, collab, collection' : e.message));
     e.files = files;
     e.debugFile = await saveDebug(tabId, base, t, info, notes);
     throw e;
@@ -239,10 +300,47 @@ async function handleSave(tabId, id) {
   }
 }
 
+async function discoverFromItem(tabId, frameId, item) {
+  if (!item || !item.driveId || !item.itemId) return;
+  const k = `${tabId}:${item.driveId}:${item.itemId}`;
+  if (discovering.has(k)) return;
+  discovering.add(k);
+  try {
+    const fake = {
+      driveId: item.driveId,
+      itemId: item.itemId,
+      transcriptId: item.transcriptId,
+      host: item.host,
+      origin: item.origin,
+      sitePath: item.sitePath,
+      name: item.name,
+      location: item.location,
+    };
+    const found = [];
+    for (const url of Scan.discoverUrls(fake)) {
+      if (!isAllowedUrl(url)) continue;
+      const r = await fetchText(tabId, frameId || 0, url);
+      if (!r || !r.ok || !r.text) continue;
+      let json;
+      try { json = JSON.parse(r.text); } catch (e) { continue; }
+      found.push.apply(found, Scan.scanForTranscripts(json, url));
+      if (found.length) break;
+    }
+    if (found.length) await addCaptures(tabId, frameId, found);
+    else await addCaptures(tabId, frameId, [fake]);
+  } finally {
+    discovering.delete(k);
+  }
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   const senderTab = sender.tab && sender.tab.id;
   if (msg.type === 'captured' && senderTab != null) {
     addCaptures(senderTab, sender.frameId, msg.transcripts || []);
+    return false;
+  }
+  if (msg.type === 'item-context' && senderTab != null) {
+    discoverFromItem(senderTab, sender.frameId, msg.item).catch(() => {});
     return false;
   }
   if (msg.type === 'observe' && senderTab != null) {

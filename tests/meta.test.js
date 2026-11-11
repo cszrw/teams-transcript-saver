@@ -5,7 +5,7 @@ const out = require('../lib/output.js');
 const TID = '19:meeting_abcDEF123@thread.v2';
 
 test('graph event / onlineMeeting gives start + thread', () => {
-  const r = scanMeetings({ value: [{ subject: 'Daily Atlassian', start: { dateTime: '2026-10-19T07:30:00.0000000', timeZone: 'UTC' },
+  const r = scanMeetings({ value: [{ subject: 'Daily Standup', start: { dateTime: '2026-10-19T07:30:00.0000000', timeZone: 'UTC' },
     end: { dateTime: '2026-10-19T08:15:00', timeZone: 'UTC' }, onlineMeeting: { joinUrl: 'https://teams.microsoft.com/l/meetup-join/' + encodeURIComponent(TID) + '/0' } }] });
   assert.strictEqual(r[0].start, '2026-10-19T07:30:00.000Z');
   assert.strictEqual(r[0].threadId, TID);
@@ -13,15 +13,15 @@ test('graph event / onlineMeeting gives start + thread', () => {
 
 test('chatsvc messages', () => {
   const c = scanChat({ messages: [
-    { id: '2', conversationid: TID, messagetype: 'RichText/Html', composetime: '2026-10-19T07:40:00Z', imdisplayname: 'Tolkmitt, Martin', content: '<p>link &amp; more</p>' },
+    { id: '2', conversationid: TID, messagetype: 'RichText/Html', composetime: '2026-10-19T07:40:00Z', imdisplayname: 'Alex Contoso', content: '<p>link &amp; more</p>' },
     { id: '1', conversationid: TID, messagetype: 'Event/Call', composetime: '2026-10-19T07:31:00Z', content: '<partlist type="started"/>' },
     { id: '3', conversationid: TID, messagetype: 'ThreadActivity/AddMember', composetime: '2026-10-19T07:32:00Z', content: 'x' }] });
   assert.strictEqual(c.callStart, '2026-10-19T07:31:00.000Z');
   assert.deepStrictEqual(c.messages.map((m) => m.text), ['link & more']);
-  const info = out.resolve({}, { meetings: [], chats: { [TID]: c } }, 'Daily Atlassian');
+  const info = out.resolve({}, { meetings: [], chats: { [TID]: c } }, 'Daily Standup');
   assert.strictEqual(info.start, '2026-10-19T07:31:00.000Z');
-  assert.match(out.header('Daily Atlassian', '2026-10-19', info), /Meeting start: 2026-10-19 09:31 Europe\/Berlin/);
-  assert.match(out.chatSection(info), /\[2026-10-19 09:40\] Tolkmitt, Martin: link & more/);
+  assert.match(out.header('Daily Standup', '2026-10-19', info), /Meeting start: 2026-10-19 09:31 Europe\/Berlin/);
+  assert.match(out.chatSection(info), /\[2026-10-19 09:40\] Alex Contoso: link & more/);
   const j = JSON.parse(out.augmentJson('{"type":"Transcript","entries":[]}', info));
   assert.strictEqual(j.meetingStart, info.start); assert.strictEqual(j.chat.length, 1); assert.deepStrictEqual(j.entries, []);
 });
@@ -42,7 +42,7 @@ test('debug summary redacts and finds dates/threads', () => {
   assert.ok(r.hits.some((h) => h.includes('19:meeting_x')));
 });
 
-test('real recap shapes (19 Oct): driveItem, collab ticks, substrate -> one meeting', () => {
+test('recap shapes: driveItem, collab ticks, search -> one meeting', () => {
   const T = '19:meeting_MDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAw@thread.v2';
   const { scanMeetings, ticks } = require('../lib/meta.js');
   assert.strictEqual(ticks('639279937919530198').slice(0, 16), '2026-10-19T08:03');
@@ -52,7 +52,7 @@ test('real recap shapes (19 Oct): driveItem, collab ticks, substrate -> one meet
   assert.strictEqual(drive.length, 1); assert.strictEqual(drive[0].source, 'recording'); assert.strictEqual(drive[0].threadId, T);
   assert.strictEqual(collab[0].source, 'collab'); assert.strictEqual(search[0].source, 'search');
   const meetings = [...collab, ...search, ...drive].map((x, i) => ({ ...x, seenAt: i }));
-  const info = out.resolve({}, { meetings, chats: {} }, 'Introduction into Enterprise Architecture & requirements for CMDB/ITAM');
+  const info = out.resolve({}, { meetings, chats: {} }, 'Weekly Architecture Review');
   assert.strictEqual(info.start, '2026-10-19T08:03:02.298Z');
   assert.match(info.startSource, /recording/);
   assert.match(out.header('X', '2026-10-19', info), /Meeting start: 2026-10-19 10:03 Europe\/Berlin \(end 12:19\)/);

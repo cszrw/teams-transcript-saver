@@ -22,6 +22,8 @@
     if (e.source !== window || !d || d[TAG] !== true) return;
     if (d.type === 'captured') {
       send({ type: 'captured', transcripts: d.transcripts }).catch(() => {});
+    } else if (d.type === 'item-context' && d.item) {
+      send({ type: 'item-context', item: d.item }).catch(() => {});
     } else if (d.type === 'observe') {
       send({ type: 'observe', entry: d.entry }).catch(() => {});
     } else if (d.type === 'meta') {
